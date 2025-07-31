@@ -26,16 +26,14 @@ def load_and_label_excel(file, year):
         file.seek(0)
         in_memory_file = BytesIO(file.read())
         xls = pd.ExcelFile(in_memory_file)
-        if not xls.sheet_names:
-            st.error(f"{file.name} 내에 읽을 수 있는 시트가 없습니다.")
-            return []
         dfs = []
         for sheet_name in xls.sheet_names:
+            # 표 데이터가 15번째 줄에서 시작(헤더), 위는 메타정보!
             try:
-                df = pd.read_excel(xls, sheet_name=sheet_name)
-                df.columns = df.columns.str.strip()     # <--- 칼럼명 공백 제거
-                if df.shape[0] == 0:
-                    st.warning(f"{file.name}의 시트 [{sheet_name}]는 데이터가 없습니다.")
+                df = pd.read_excel(xls, sheet_name=sheet_name, skiprows=14)
+                df.columns = df.columns.str.strip()
+                if df.shape[0] == 0 or ("연관어" not in df.columns):
+                    st.warning(f"{file.name} [{sheet_name}]: 데이터가 없거나 칼럼명 불일치")
                     continue
                 df['연도'] = year
                 df['분석채널'] = sheet_name
