@@ -126,18 +126,24 @@ def rising_keywords(df, recent_n=2, threshold=3):
 def label_chip(label, value, color="black", bg="#DDD"):
     return f"<span style='padding:4px 12px 4px 12px; border-radius:15px; background:{bg}; color:{color}; margin-right:8px; font-size:0.95em;'>{label}: {value}</span>"
 
-st.set_page_config(layout='centered')
-st.title("🚀 연관어 빅데이터 자동 전처리·시각화 툴")
-st.markdown("""
-    <style>
-    .download-btn-container {
-        display: flex; justify-content: flex-end; align-items: center;
-        position: absolute; right:2%; top:40px; z-index:9;
-    }
-    .stDataFrame > div { margin-top: 0.8em !important; }
-    </style>
-    """, unsafe_allow_html=True
-)
+st.set_page_config(layout='wide')
+
+st.markdown("<h1 style='text-align:center;'>연관어 빅데이터 자동 전처리·시각화 툴</h1>", unsafe_allow_html=True)
+
+# 1. 중앙에 적당히 좁은 컨테이너 활용 (예: max-width 1100px)
+with st.container():
+    st.markdown(
+        """
+        <div style='max-width:1100px; margin:0 auto;'>
+        """, unsafe_allow_html=True
+    )
+
+    # ---- [여기에 모든 주요 Chart, 미리보기 표, 다운로드 버튼 등 코드] ----
+    # DataFrame/Chart를 그냥 st.dataframe(), st.pyplot() 등을 사용하면
+    # 영역이 1100px 정도 폭 내에 표시됨
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 uploaded_files = st.file_uploader(
     "엑셀 파일 여러 개 업로드", 
