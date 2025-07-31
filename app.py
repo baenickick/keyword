@@ -5,10 +5,39 @@ from io import BytesIO
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import seaborn as sns
+import matplotlib.font_manager as fm
 
-# --------------- 연도 추출 함수 -----------------
+# 한글 폰트 설정 (나눔스퀘어)
+def setup_font():
+    try:
+        # 나눔스퀘어 폰트 경로들 시도
+        font_paths = [
+            '/usr/share/fonts/truetype/nanum/NanumSquareR.ttf',  # Linux
+            'C:/Windows/Fonts/NanumSquareR.ttf',  # Windows
+            '/System/Library/Fonts/AppleGothic.ttf',  # Mac 대체
+            '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'  # 대체폰트
+        ]
+        
+        for font_path in font_paths:
+            try:
+                font_name = fm.FontProperties(fname=font_path).get_name()
+                plt.rcParams['font.family'] = font_name
+                plt.rcParams['axes.unicode_minus'] = False
+                return font_path
+            except:
+                continue
+        
+        # 폰트를 찾지 못한 경우 기본 설정
+        plt.rcParams['font.family'] = 'DejaVu Sans'
+        return None
+    except:
+        return None
+
+# 폰트 설정 실행
+FONT_PATH = setup_font()
+
 def extract_year_from_filename(filename):
-    found = re.findall(r'(\d{2})\d{4,}', filename)  # 예: 250101 -> "25"
+    found = re.findall(r'(\d{2})\d{4,}', filename)
     year = None
     if found:
         year = int('20' + found[0])
@@ -17,94 +46,78 @@ def extract_year_from_filename(filename):
         year = int(found[0]) if found else None
     return year
 
-# -------------- 표 시작 행 자동 감지 --------------
 def find_table_start(file, sheet_name):
     """엑셀 시트에서 실제 데이터 표가 시작하는 행을 자동으로 찾는 함수"""
     try:
-        # 처음 30행 정도만 읽어서 헤더 위치 찾기
         df_preview = pd.read_excel(file, sheet_name=sheet_name, header=None, nrows=30)
-        
-        # 찾을 키워드들 (실제 데이터 헤더로 예상되는 것들)
         header_keywords = ['순위', '연관어', '건수', '카테고리', 'rank', 'keyword', 'count']
         
         for row_idx in range(len(df_preview)):
             row_values = df_preview.iloc[row_idx].astype(str).str.lower()
-            # 키워드 중 하나라도 포함된 행을 찾으면 그게 헤더
             if any(keyword.lower() in ' '.join(row_values) for keyword in header_keywords):
                 return row_idx
-        
-        # 키워드를 못 찾으면 기본값 0 반환
         return 0
     except:
         return 0
 
-# -------------- 엑셀 파일(sheet별) 읽기 (자동감지 적용) --------------
 def load_and_label_excel(file, year):
     try:
         file.seek(0)
         sig = file.read(4)
         if sig != b'PK\x03\x04':
-            st.error(f"{file.name}: 정상적인 엑셀(xlsx) 파일이 아닙니다.")
             return []
         file.seek(0)
         in_memory_file = BytesIO(file.read())
         xls = pd.ExcelFile(in_memory_file)
         
         if not xls.sheet_names:
-            st.error(f"{file.name} 내에 읽을 수 있는 시트가 없습니다.")
             return []
         
         dfs = []
         for sheet_name in xls.sheet_names:
             try:
-                # 표 시작 행 자동 감지
                 header_row = find_table_start(in_memory_file, sheet_name)
-                st.info(f"📊 {file.name} [{sheet_name}]: {header_row+1}번째 행에서 데이터 표 시작 감지")
-                
-                # 감지된 행부터 데이터 읽기
                 df = pd.read_excel(in_memory_file, sheet_name=sheet_name, header=header_row)
                 df.columns = df.columns.str.strip()
                 
-                # 데이터가 비어있는지 확인
                 if df.empty or len(df) == 0:
-                    st.warning(f"{file.name} [{sheet_name}]: 데이터가 없습니다.")
                     continue
                 
-                # 필수 컬럼 중 하나라도 있는지 확인
                 essential_cols = ['순위', '연관어', '건수']
                 if not any(col in df.columns for col in essential_cols):
-                    st.warning(f"{file.name} [{sheet_name}]: 필수 컬럼(순위/연관어/건수)을 찾을 수 없습니다.")
                     continue
                 
                 df['연도'] = year
                 df['분석채널'] = sheet_name
                 dfs.append(df)
-                st.success(f"✅ {file.name} [{sheet_name}]: {len(df)}행 데이터 로드 완료")
                 
-            except Exception as e:
-                st.warning(f"{file.name}의 시트 [{sheet_name}] 로딩 실패: {e}")
+            except Exception:
+                continue
         
         return dfs
-    except Exception as e:
-        st.error(f"{file.name} 파일을 읽는 중 문제 발생: {e}")
+    except Exception:
         return []
 
 def merge_and_standardize(files):
     all_dfs = []
+    success_count = 0
+    
     for upfile in files:
         upfile.seek(0)
         year = extract_year_from_filename(upfile.name)
         if year is None:
-            st.warning(f"⚠️ {upfile.name}: 파일명에서 연도를 추출할 수 없습니다.")
-            year = 2024  # 기본값
+            year = 2024
         
         dfs = load_and_label_excel(upfile, year)
-        if len(dfs) == 0:
-            st.warning(f"⚠️ {upfile.name} 파일에서 데이터를 불러오지 못했습니다.")
+        if len(dfs) > 0:
+            success_count += 1
         all_dfs.extend(dfs)
     
-    if not all_dfs:
-        st.error("업로드한 모든 파일에서 데이터를 추출하지 못했습니다. 엑셀 시트 구조나 파일 자체를 확인하세요.")
+    # 간단한 결과 알림만 표시
+    if success_count > 0:
+        st.success(f"✅ {success_count}개 파일 처리 완료!")
+    else:
+        st.error("❌ 처리할 수 있는 파일이 없습니다.")
         return pd.DataFrame()
     
     df = pd.concat(all_dfs, ignore_index=True)
@@ -144,27 +157,18 @@ def label_chip(label, value, color="black", bg="#DDD"):
 
 st.set_page_config(layout='wide')
 st.title("🚀 연관어 빅데이터 자동 전처리·시각화 툴")
-st.markdown("##### 엑셀 여러개 `drag & drop`하면 **자동 테이블 감지**로 연도/시트별 취합, 미리보기, 시각화까지 한 번에!")
+st.markdown("##### 엑셀 여러개 업로드하면 **자동 테이블 감지**로 연도/시트별 취합, 시각화까지 한 번에!")
 
 uploaded_files = st.file_uploader(
-    "엑셀 파일 여러 개 업로드 (예: 썸트렌드_여름여행_연관어_250101-250730.xlsx)", 
+    "엑셀 파일 여러 개 업로드", 
     type=["xlsx"], accept_multiple_files=True)
 
 if uploaded_files:
-    with st.spinner('📊 파일 업로드 중... 자동으로 데이터 테이블을 감지하고 있습니다.'):
+    with st.spinner('📊 파일 처리 중...'):
         df = merge_and_standardize(uploaded_files)
     
     if df.empty:
-        st.error("❌ 처리할 수 있는 데이터가 없습니다.")
         st.stop()
-
-    # 성공 메시지
-    st.success(f"🎉 총 {len(df)}행의 데이터가 성공적으로 병합되었습니다!")
-    
-    # 칼럼명 리스트 직접 표시(문제 진단 확인용)
-    with st.expander("🔍 데이터 구조 확인"):
-        st.write("**실제 DataFrame 칼럼:**", df.columns.tolist())
-        st.write("**데이터 형태:**", df.shape)
 
     # ================== 미리보기 & 라벨 ==================
     show_cols = ["연도", "분석채널", "순위", "연관어", "건수", "카테고리 대분류", "카테고리 소분류"]
@@ -181,20 +185,21 @@ if uploaded_files:
         for lbl, val in meta_info.items()
     ])
     st.markdown(label_html, unsafe_allow_html=True)
-    st.dataframe(df[view_cols].head(20), use_container_width=True)
     
-    # 다운로드 버튼
-    st.download_button(
-        "📥 엑셀 파일 다운받기", 
-        data=to_excel(df), 
-        file_name="통합_연관어_취합.xlsx", 
-        mime="application/vnd.ms-excel"
-    )
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.dataframe(df[view_cols].head(20), use_container_width=True)
+    with col2:
+        st.download_button(
+            "📥 엑셀 다운로드", 
+            data=to_excel(df), 
+            file_name="통합_연관어_취합.xlsx", 
+            mime="application/vnd.ms-excel"
+        )
 
     # ================== 연도, 채널 선택 시각화 ==================
     st.markdown("#### 📊 [ 연관어/카테고리별 분석 및 시각화 ]")
     
-    # 필터 설정
     col1, col2 = st.columns(2)
     with col1:
         year_list = list(sorted(df["연도"].dropna().unique()))
@@ -210,82 +215,82 @@ if uploaded_files:
     else:
         view_df = df[df["연도"]==year_sel]
 
-    if view_df.empty:
-        st.warning("선택한 조건에 해당하는 데이터가 없습니다.")
-    else:
-        # 워드클라우드
-        st.markdown("**☁️ [워드클라우드]**")
-        if "연관어" in view_df.columns and "건수" in view_df.columns:
-            try:
-                word_freq = view_df.groupby("연관어")["건수"].sum().to_dict()
-                if word_freq:
-                    wc = WordCloud(
-                        width=700, height=400, 
-                        background_color='white', 
-                        font_path=None,
-                        max_words=50
-                    ).generate_from_frequencies(word_freq)
+    if not view_df.empty:
+        # 워드클라우드와 버블차트를 나란히 배치
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**☁️ [워드클라우드]**")
+            if "연관어" in view_df.columns and "건수" in view_df.columns:
+                try:
+                    word_freq = view_df.groupby("연관어")["건수"].sum().to_dict()
+                    if word_freq:
+                        wc = WordCloud(
+                            width=500, height=300, 
+                            background_color='white', 
+                            font_path=FONT_PATH,
+                            max_words=30
+                        ).generate_from_frequencies(word_freq)
+                        
+                        fig, ax = plt.subplots(figsize=(6, 4))
+                        ax.imshow(wc, interpolation='bilinear')
+                        ax.axis('off')
+                        st.pyplot(fig, clear_figure=True)
+                    else:
+                        st.info("데이터 부족")
+                except Exception as e:
+                    st.error(f"워드클라우드 생성 오류: {e}")
+            else:
+                st.info("연관어/건수 컬럼 없음")
+
+        with col2:
+            st.markdown("**🫧 [버블차트]**")
+            if all(x in view_df.columns for x in ["순위","건수","연관어"]):
+                try:
+                    fig, ax = plt.subplots(figsize=(6, 4))
                     
-                    fig, ax = plt.subplots(figsize=(10, 6))
-                    ax.imshow(wc, interpolation='bilinear')
-                    ax.axis('off')
-                    st.pyplot(fig)
-                else:
-                    st.info("워드클라우드 생성을 위한 데이터가 부족합니다.")
-            except Exception as e:
-                st.error(f"워드클라우드 생성 중 오류: {e}")
-        else:
-            st.info("워드클라우드 생성을 위한 연관어/건수 컬럼이 없습니다.")
+                    if "카테고리 대분류" in view_df.columns:
+                        sns.scatterplot(
+                            data=view_df.head(15), x="순위", y="건수", 
+                            size="건수", hue="카테고리 대분류", 
+                            sizes=(50, 500), alpha=0.7, ax=ax
+                        )
+                    else:
+                        sns.scatterplot(
+                            data=view_df.head(15), x="순위", y="건수", 
+                            size="건수", sizes=(50, 500), alpha=0.7, ax=ax
+                        )
+                    
+                    # 상위 5개만 텍스트 표시
+                    for _, r in view_df.head(5).iterrows():
+                        try:
+                            ax.text(r["순위"], r["건수"], str(r["연관어"])[:8], 
+                                   fontsize=8, alpha=0.8, ha='center')
+                        except:
+                            pass
+                    
+                    ax.set_title(f"{year_sel}년 {ch_sel} 연관어 분석")
+                    st.pyplot(fig, clear_figure=True)
+                except Exception as e:
+                    st.error(f"버블차트 생성 오류: {e}")
+            else:
+                st.info("필수 컬럼 부족")
 
-        # 버블차트
-        st.markdown("**🫧 [버블차트 (순위 vs 건수)]**")
-        if all(x in view_df.columns for x in ["순위","건수","연관어"]):
-            try:
-                fig, ax = plt.subplots(figsize=(12,8))
-                
-                # 카테고리 대분류가 있으면 색상으로 구분
-                if "카테고리 대분류" in view_df.columns:
-                    sns.scatterplot(
-                        data=view_df.head(20), x="순위", y="건수", 
-                        size="건수", hue="카테고리 대분류", 
-                        sizes=(100, 1500), alpha=0.7, ax=ax
-                    )
-                else:
-                    sns.scatterplot(
-                        data=view_df.head(20), x="순위", y="건수", 
-                        size="건수", sizes=(100, 1500), alpha=0.7, ax=ax
-                    )
-                
-                # 연관어 텍스트 추가
-                for _, r in view_df.head(15).iterrows():
-                    try:
-                        ax.text(r["순위"], r["건수"], str(r["연관어"])[:10], 
-                               fontsize=8, alpha=0.8, ha='center')
-                    except:
-                        pass
-                
-                ax.set_title(f"{year_sel}년 {ch_sel} 연관어 분석")
-                st.pyplot(fig)
-            except Exception as e:
-                st.error(f"버블차트 생성 중 오류: {e}")
-        else:
-            st.info("버블차트 생성을 위한 필수 컬럼이 부족합니다.")
-
-        # 대분류/소분류 합계 랭킹
-        st.markdown("#### 📈 [가장 많이 언급된 카테고리]")
+        # 카테고리 분석
+        st.markdown("#### 📈 [카테고리 분석]")
         col1, col2 = st.columns(2)
         
         with col1:
             if "카테고리 대분류" in view_df.columns and "건수" in view_df.columns:
                 st.markdown("**대분류 Top5**")
                 top_major = view_df.groupby("카테고리 대분류")["건수"].sum().sort_values(ascending=False).head(5)
-                st.dataframe(top_major)
+                st.dataframe(top_major, use_container_width=True)
         
         with col2:
             if "카테고리 소분류" in view_df.columns and "건수" in view_df.columns:
                 st.markdown("**소분류 Top5**")
                 top_minor = view_df.groupby("카테고리 소분류")["건수"].sum().sort_values(ascending=False).head(5)
-                st.dataframe(top_minor)
+                st.dataframe(top_minor, use_container_width=True)
 
     # Rising keyword
     st.markdown("#### 🚀 [Rising Keyword 탐색]")
@@ -296,51 +301,41 @@ if uploaded_files:
         
         rising_df = rising_keywords(df, recent_n=n_year)
         if not rising_df.empty:
-            st.dataframe(rising_df.head(10), use_container_width=True)
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                try:
+                    fig2, ax2 = plt.subplots(figsize=(8, 4))
+                    sns.scatterplot(
+                        data=rising_df.head(10), x="증가율", y="최근", 
+                        size="최근", sizes=(30, 300), alpha=0.7, ax=ax2
+                    )
+                    
+                    for _, r in rising_df.head(8).iterrows():
+                        try: 
+                            ax2.text(r["증가율"], r["최근"], str(r["연관어"])[:6], 
+                                    fontsize=8, alpha=0.8)
+                        except: 
+                            pass
+                    
+                    ax2.set_title("Rising Keywords")
+                    st.pyplot(fig2, clear_figure=True)
+                except Exception as e:
+                    st.error(f"Rising Keyword 차트 오류: {e}")
             
-            st.markdown("**🚀 Rising Keyword Bubble Chart**")
-            try:
-                fig2, ax2 = plt.subplots(figsize=(10,6))
-                sns.scatterplot(
-                    data=rising_df.head(15), x="증가율", y="최근", 
-                    size="최근", sizes=(50, 800), alpha=0.7, ax=ax2
-                )
-                
-                for _, r in rising_df.head(10).iterrows():
-                    try: 
-                        ax2.text(r["증가율"], r["최근"], str(r["연관어"])[:8], 
-                                fontsize=9, alpha=0.8)
-                    except: 
-                        pass
-                
-                ax2.set_title("Rising Keywords (증가율 vs 최근 언급량)")
-                st.pyplot(fig2)
-            except Exception as e:
-                st.error(f"Rising Keyword 차트 생성 중 오류: {e}")
+            with col2:
+                st.dataframe(rising_df.head(10), use_container_width=True)
         else:
-            st.info("Rising Keyword 데이터가 없거나 조건에 맞는 키워드가 없습니다.")
+            st.info("Rising Keyword 데이터 없음")
     else:
-        st.info("Rising Keyword 탐색을 위해서는 최소 2개 연도의 데이터가 필요합니다.")
+        st.info("최소 2개 연도 데이터 필요")
 
 else:
-    st.info("🔼 엑셀 파일을 여러개 업로드하면 자동으로 테이블을 감지하고 연도/채널별 취합과 전처리, 시각화가 시작됩니다.")
+    st.info("🔼 엑셀 파일을 업로드하면 자동으로 처리됩니다.")
     
-    # 사용법 안내
-    with st.expander("💡 사용법 안내"):
+    with st.expander("💡 사용법"):
         st.markdown("""
-        **지원하는 파일 형식:**
-        - .xlsx 엑셀 파일 (여러 시트 지원)
-        - 파일명에 연도 정보 포함 (예: 250101, 240315 등)
-        
-        **자동 감지 기능:**
-        - 📊 엑셀 시트에서 '순위', '연관어', '건수' 등 헤더 자동 감지
-        - 🔍 메타 정보와 실제 데이터 테이블 구분
-        - 📅 파일명에서 연도 자동 추출
-        
-        **제공 기능:**
-        - 🔄 여러 파일/시트 자동 병합
-        - ☁️ 워드클라우드 시각화
-        - 🫧 버블차트 분석
-        - 🚀 Rising Keyword 탐지
-        - 📥 결과 엑셀 다운로드
+        **지원 파일:** .xlsx 엑셀 (여러 시트 지원)  
+        **자동 감지:** 순위/연관어/건수 헤더 자동 찾기  
+        **한글 지원:** 나눔스퀘어 폰트 적용  
+        **기능:** 워드클라우드, 버블차트, Rising Keyword  
         """)
