@@ -25,7 +25,7 @@ def setup_nanum_font():
             plt.rcParams['axes.unicode_minus'] = False
             return path
     st.error("❗ '나눔스퀘어_ac' 폰트 파일(NanumSquare_acR.ttf)을 프로젝트 폴더나 시스템 폰트 경로에 넣어주세요!")
-    plt.rcParams['font.family'] = 'DejaVu Sans'
+    plt.rcParams['font.family'] = 'NanumSquare_acR'
     return None
 FONT_PATH = setup_nanum_font()
 
