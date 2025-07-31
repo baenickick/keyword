@@ -214,11 +214,11 @@ if uploaded_files:
             word_freq = view_df.groupby("연관어")["건수"].sum().to_dict()
             if word_freq and FONT_PATH:
                 wc = WordCloud(
-                    width=800, height=600, 
+                    width=1400, height=1000, 
                     background_color='white', 
                     font_path=FONT_PATH, max_words=100
                 ).generate_from_frequencies(word_freq)
-                fig, ax = plt.subplots(figsize=(15, 6))
+                fig, ax = plt.subplots(figsize=(10, 4))
                 ax.imshow(wc, interpolation='bilinear')
                 ax.axis('off')
                 st.pyplot(fig)
