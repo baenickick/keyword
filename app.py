@@ -126,7 +126,7 @@ def rising_keywords(df, recent_n=2, threshold=3):
 def label_chip(label, value, color="black", bg="#DDD"):
     return f"<span style='padding:4px 12px 4px 12px; border-radius:15px; background:{bg}; color:{color}; margin-right:8px; font-size:0.95em;'>{label}: {value}</span>"
 
-st.set_page_config(layout='wide')
+st.set_page_config(layout='centered')
 st.title("🚀 연관어 빅데이터 자동 전처리·시각화 툴")
 st.markdown("""
     <style>
