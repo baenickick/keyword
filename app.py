@@ -128,7 +128,7 @@ def label_chip(label, value, color="black", bg="#DDD"):
 
 st.set_page_config(layout='wide')
 
-st.markdown("<h1 style='text-align:center;'>연관어 빅데이터 자동 전처리·시각화 툴</h1>", unsafe_allow_html=True)
+st.markdown("<h1 style='text-align:left;'>연관어 빅데이터 자동 전처리·시각화 툴</h1>", unsafe_allow_html=True)
 
 # 1. 중앙에 적당히 좁은 컨테이너 활용 (예: max-width 1100px)
 with st.container():
